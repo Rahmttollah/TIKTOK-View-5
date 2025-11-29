@@ -4,11 +4,11 @@ from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from webdriver_manager.chrome import ChromeDriverManager
 import time
 import random
 import logging
 import os
+import subprocess
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +26,8 @@ class TikTokViewer:
             chrome_options.add_argument('--disable-dev-shm-usage')
             chrome_options.add_argument('--disable-gpu')
             chrome_options.add_argument('--window-size=1920,1080')
+            chrome_options.add_argument('--disable-extensions')
+            chrome_options.add_argument('--disable-software-rasterizer')
             
             # Anti-detection
             chrome_options.add_argument("--disable-blink-features=AutomationControlled")
@@ -33,10 +35,23 @@ class TikTokViewer:
             chrome_options.add_experimental_option('useAutomationExtension', False)
             
             # User agent
-            chrome_options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+            chrome_options.add_argument("--user-agent=Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
             
-            # Install and setup ChromeDriver
-            service = Service(ChromeDriverManager().install())
+            # Find Chrome path
+            chrome_path = self.find_chrome_path()
+            if chrome_path:
+                chrome_options.binary_location = chrome_path
+            
+            # Setup ChromeDriver with direct path
+            chrome_driver_path = "/usr/local/bin/chromedriver"
+            
+            if os.path.exists(chrome_driver_path):
+                service = Service(chrome_driver_path)
+            else:
+                # Fallback to webdriver-manager
+                from webdriver_manager.chrome import ChromeDriverManager
+                service = Service(ChromeDriverManager().install())
+            
             self.driver = webdriver.Chrome(service=service, options=chrome_options)
             
             self.driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
@@ -47,16 +62,33 @@ class TikTokViewer:
             logger.error(f"Driver setup error: {str(e)}")
             return False
     
+    def find_chrome_path(self):
+        """Find Chrome installation path"""
+        possible_paths = [
+            "/usr/bin/google-chrome-stable",
+            "/usr/bin/google-chrome",
+            "/usr/bin/chromium-browser",
+            "/usr/bin/chromium"
+        ]
+        
+        for path in possible_paths:
+            if os.path.exists(path):
+                logger.info(f"Found Chrome at: {path}")
+                return path
+        
+        logger.warning("Chrome not found in standard paths")
+        return None
+    
     def watch_video(self, session_id, video_url, watch_time):
         try:
             logger.info("Setting up browser...")
             if not self.setup_driver():
                 return False, "Browser setup failed"
             
-            # First, set cookies on TikTok domain
+            # Set cookies on TikTok domain
             logger.info("Setting session cookie...")
             self.driver.get("https://www.tiktok.com")
-            time.sleep(2)
+            time.sleep(3)
             
             # Add session cookie
             self.driver.add_cookie({
@@ -64,17 +96,16 @@ class TikTokViewer:
                 'value': session_id,
                 'domain': '.tiktok.com',
                 'path': '/',
-                'secure': True,
-                'httpOnly': True
+                'secure': True
             })
             
             logger.info(f"Navigating to video: {video_url}")
             self.driver.get(video_url)
             time.sleep(5)  # Wait for page load
             
-            # Try to find and play video
+            # Try to find video element
             try:
-                wait = WebDriverWait(self.driver, 10)
+                wait = WebDriverWait(self.driver, 15)
                 video_element = wait.until(
                     EC.presence_of_element_located((By.TAG_NAME, "video"))
                 )
@@ -84,14 +115,15 @@ class TikTokViewer:
                 logger.info("Video started playing")
                 
             except Exception as e:
-                logger.warning(f"Could not play video automatically: {str(e)}")
-                # Continue even if auto-play fails
+                logger.warning(f"Video auto-play failed: {str(e)}")
+                # Continue without auto-play
             
             # Calculate watch time
             if watch_time == 'full':
                 try:
                     video_duration = self.driver.execute_script("return arguments[0].duration;", video_element)
-                    actual_watch_time = min(video_duration, 120)  # Max 2 minutes
+                    actual_watch_time = min(video_duration, 60)  # Max 1 minute
+                    logger.info(f"Full video duration: {video_duration}s")
                 except:
                     actual_watch_time = 30  # Default 30 seconds
             else:
@@ -100,7 +132,7 @@ class TikTokViewer:
             logger.info(f"Watching for {actual_watch_time} seconds")
             time.sleep(actual_watch_time)
             
-            return True, f"Video watched for {actual_watch_time} seconds"
+            return True, f"Successfully watched video for {actual_watch_time} seconds"
             
         except Exception as e:
             logger.error(f"Video watching error: {str(e)}")
@@ -113,6 +145,21 @@ class TikTokViewer:
         if self.driver:
             try:
                 self.driver.quit()
-                logger.info("Browser closed")
+                logger.info("Browser closed successfully")
             except Exception as e:
                 logger.error(f"Error closing browser: {str(e)}")
+
+    def check_chrome_installation(self):
+        """Check if Chrome is properly installed"""
+        try:
+            result = subprocess.run(['which', 'google-chrome-stable'], 
+                                  capture_output=True, text=True)
+            if result.returncode == 0:
+                logger.info(f"Chrome found at: {result.stdout.strip()}")
+                return True
+            else:
+                logger.error("Chrome not found in system PATH")
+                return False
+        except Exception as e:
+            logger.error(f"Error checking Chrome: {str(e)}")
+            return False
