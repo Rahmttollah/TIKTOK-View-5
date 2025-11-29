@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TikTok Auto Viewer</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🚀 TikTok Auto Viewer</h1>
+            <p>Automatically watch TikTok videos with custom duration</p>
+        </div>
+
+        <div class="form-container">
+            <div class="input-group">
+                <label for="sessionId">🔑 Your TikTok Session ID:</label>
+                <input type="text" id="sessionId" placeholder="Enter your sessionid cookie value">
+                <small class="help-text">Required for authentication</small>
+            </div>
+
+            <div class="input-group">
+                <label for="videoUrl">🎬 TikTok Video URL:</label>
+                <input type="text" id="videoUrl" placeholder="https://www.tiktok.com/@username/video/123456789">
+                <small class="help-text">Paste the full TikTok video URL</small>
+            </div>
+
+            <div class="input-group">
+                <label for="watchTime">⏱️ Watch Duration:</label>
+                <select id="watchTime">
+                    <option value="10">10 Seconds</option>
+                    <option value="20" selected>20 Seconds</option>
+                    <option value="30">30 Seconds</option>
+                    <option value="60">1 Minute</option>
+                    <option value="120">2 Minutes</option>
+                    <option value="full">Full Video</option>
+                </select>
+            </div>
+
+            <button id="watchBtn" onclick="startWatching()">▶️ Start Watching</button>
+        </div>
+
+        <div id="status" class="status"></div>
+
+        <div class="instructions">
+            <h3>📝 How to Get Session ID:</h3>
+            <ol>
+                <li>Go to <a href="https://tiktok.com" target="_blank">TikTok.com</a> and login</li>
+                <li>Press <code>F12</code> to open Developer Tools</li>
+                <li>Go to <strong>Application</strong> tab → <strong>Cookies</strong> → <strong>https://www.tiktok.com</strong></li>
+                <li>Find <code>sessionid</code> cookie and copy its <strong>Value</strong></li>
+                <li>Paste the value in the Session ID field above</li>
+            </ol>
+            
+            <div class="warning">
+                <strong>⚠️ Important:</strong>
+                <ul>
+                    <li>Don't share your session ID with anyone</li>
+                    <li>Session ID expires after some time</li>
+                    <li>Maximum 8 videos per minute</li>
+                    <li>Use at your own risk</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let isProcessing = false;
+
+        async function startWatching() {
+            if (isProcessing) {
+                alert('Please wait, previous request is processing...');
+                return;
+            }
+
+            const sessionId = document.getElementById('sessionId').value.trim();
+            const videoUrl = document.getElementById('videoUrl').value.trim();
+            const watchTime = document.getElementById('watchTime').value;
+            const status = document.getElementById('status');
+            const watchBtn = document.getElementById('watchBtn');
+
+            if (!sessionId) {
+                alert('Please enter your Session ID');
+                return;
+            }
+
+            if (!videoUrl) {
+                alert('Please enter TikTok Video URL');
+                return;
+            }
+
+            if (!videoUrl.includes('tiktok.com') || !videoUrl.includes('/video/')) {
+                alert('Please enter a valid TikTok video URL');
+                return;
+            }
+
+            // Update UI
+            isProcessing = true;
+            watchBtn.disabled = true;
+            watchBtn.textContent = '⏳ Processing...';
+            status.innerHTML = '<div class="status-processing">🔄 Starting video watch...</div>';
+
+            try {
+                const response = await fetch('/watch', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        sessionId: sessionId,
+                        videoUrl: videoUrl,
+                        watchTime: watchTime
+                    })
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    status.innerHTML = `<div class="status-success">✅ ${result.message}</div>`;
+                    
+                    // Auto refresh after completion for non-full videos
+                    if (watchTime !== 'full' && parseInt(watchTime) < 60) {
+                        setTimeout(() => {
+                            location.reload();
+                        }, parseInt(watchTime) * 1000 + 2000);
+                    }
+                } else {
+                    status.innerHTML = `<div class="status-error">❌ Error: ${result.error}</div>`;
+                }
+
+            } catch (error) {
+                status.innerHTML = `<div class="status-error">❌ Network Error: ${error.message}</div>`;
+            } finally {
+                isProcessing = false;
+                watchBtn.disabled = false;
+                watchBtn.textContent = '▶️ Start Watching';
+            }
+        }
+
+        // Enter key support
+        document.addEventListener('keypress', function(event) {
+            if (event.key === 'Enter') {
+                startWatching();
+            }
+        });
+    </script>
+</body>
+</html>
